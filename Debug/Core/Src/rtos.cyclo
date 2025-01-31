@@ -1,0 +1,9 @@
+../Core/Src/rtos.c:4:12:RTOS_init	4
+../Core/Src/rtos.c:37:12:RTOS_addState	2
+../Core/Src/rtos.c:52:12:RTOS_switchState	4
+../Core/Src/rtos.c:65:12:RTOS_inState	1
+../Core/Src/rtos.c:71:12:RTOS_scheduleTask	5
+../Core/Src/rtos.c:95:12:RTOS_scheduleEvent	7
+../Core/Src/rtos.c:130:12:RTOS_removeFirstEvent	1
+../Core/Src/rtos.c:144:12:RTOS_Update	8
+../Core/Src/rtos.c:176:12:RTOS_ExecuteTasks	6
