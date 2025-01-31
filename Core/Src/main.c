@@ -79,8 +79,8 @@ int main(void) {
 	  STATE_NORMAL = RTOS_addState(initNormal, 0);
 	  STATE_CHARGING = RTOS_addState(initCharging, 0);
 
-	  RTOS_scheduleTask(STATE_NORMAL, processData(), 20);
-	  RTOS_scheduleTask(STATE_CHARGING, processData(), 20);
+	  RTOS_scheduleTask(STATE_NORMAL, processData, 20);
+	  RTOS_scheduleTask(STATE_CHARGING, processData, 20);
 
 
 	  /* TODO: timer setup */
