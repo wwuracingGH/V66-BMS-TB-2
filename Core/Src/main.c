@@ -80,14 +80,14 @@ int main(void) {
 	  STATE_CHARGING = RTOS_addState(initCharging, 0);
 
 	  RTOS_scheduleTask(STATE_NORMAL, processData(), 20);
+	  RTOS_scheduleTask(STATE_CHARGING, processData(), 20);
+
 
 	  /* TODO: timer setup */
 
-
 	  /* TODO: idk how the shutdown works, i need to check this lol */
 	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-	  while (1)
-	  {
+	  while (1) {
 
 	  }
 }
@@ -98,7 +98,7 @@ int main(void) {
 /* Select the segment to be read and written to
  *
  * Takes in: board_id, unsigned integer
- * Modifies state: writes an integer to the top 4 bits of
+ * Modifies state: writes an integer to the top 4 bits of GPIOB
  *
  *  */
 void segmentCS(uint8_t board_id) {
@@ -129,6 +129,11 @@ void processData() {
 
 /*
  * Talks to a specific peripheral
+ *
+ * Pulls the segment's chip select low
+ * Exchanges data with the segment
+ * Pulls the segment's chip select high
+ *
  * */
 void readPeripheral(uint8_t board_id){
 
