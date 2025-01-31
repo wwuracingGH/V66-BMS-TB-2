@@ -102,8 +102,7 @@ int main(void) {
  *
  *  */
 void segmentCS(uint8_t board_id) {
-	GPI->ODR &= ~(0b1111 << 4);
-	GPIOB->ODR |= board_id << 4;
+
 }
 
 /*
