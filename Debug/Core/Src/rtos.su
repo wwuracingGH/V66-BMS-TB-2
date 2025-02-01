@@ -1,9 +1,0 @@
-../Core/Src/rtos.c:4:12:RTOS_init	24	static
-../Core/Src/rtos.c:37:12:RTOS_addState	16	static
-../Core/Src/rtos.c:52:12:RTOS_switchState	16	static
-../Core/Src/rtos.c:65:12:RTOS_inState	16	static
-../Core/Src/rtos.c:71:12:RTOS_scheduleTask	64	static
-../Core/Src/rtos.c:95:12:RTOS_scheduleEvent	32	static
-../Core/Src/rtos.c:130:12:RTOS_removeFirstEvent	16	static
-../Core/Src/rtos.c:144:12:RTOS_Update	56	static
-../Core/Src/rtos.c:176:12:RTOS_ExecuteTasks	56	static
