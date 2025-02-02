@@ -5,6 +5,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "rtos.h"
+#include "canDefinitions.h"
 
 
 CAN_HandleTypeDef hcan;
@@ -110,7 +111,28 @@ void segmentCS(uint8_t board_id) {
  * Dumps all segment data onto the CAN bus
  * */
 void sendCAN(){
-
+	CAN_TxHeaderTypeDef CAN_header = {
+			.StdId = 0,
+			.ExtId = 0,
+			.IDE = CAN_ID_STD,
+			.RTR = CAN_RTR_DATA,
+			.DLC = sizeof(BMS_Status),
+			.TransmitGlobalTime = DISABLE
+	};
+	uint32_t TxMailbox = 0;
+	for (int i=0; i < HALF_SEGMENTS; i++){
+		CAN_header.StdId = (BMS_CANID_DATA_0 + i);
+		BMS_Status CANData = {
+			(SPI_Message[i].highestVoltage / 4),
+			(SPI_Message[i].lowestVoltage / 4),
+			(SPI_Message[i].avgVoltage / 4),
+			(SPI_Message[i].highestTemp),
+			(SPI_Message[i].lowestTemp),
+			(SPI_Message[i].avgTemp),
+			0
+		}; 
+		HAL_CAN_AddTxMessage(&hcan, &CAN_header, (uint8_t *)&CANData, &TxMailbox);
+	}
 }
 
 /*
@@ -183,10 +205,10 @@ void SystemClock_Config(void)
 static void MX_CAN_Init(void)
 {
 	hcan.Instance = CAN;
-	hcan.Init.Prescaler = 64;
+	hcan.Init.Prescaler = 48;
 	hcan.Init.Mode = CAN_MODE_NORMAL;
 	hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
-	hcan.Init.TimeSeg1 = CAN_BS1_1TQ;
+	hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
 	hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
 	hcan.Init.TimeTriggeredMode = DISABLE;
 	hcan.Init.AutoBusOff = DISABLE;

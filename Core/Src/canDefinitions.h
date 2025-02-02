@@ -46,7 +46,7 @@ BMS_CANSTRUCT {
 	BMS_Temp    maxTemp : 10;
 	BMS_Temp    minTemp : 10;
 	BMS_Temp    avgTemp : 10;
-	BMS_Byte    Fault   : 1;
+	BMS_Byte  _RESERVED : 1;
 } BMS_Status;
 
 
