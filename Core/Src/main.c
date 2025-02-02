@@ -7,6 +7,10 @@
 #include "rtos.h"
 #include "canDefinitions.h"
 
+#define STACK_MAX_VOLTAGE 4200
+#define STACK_MIN_VOLTAGE 2700
+
+#define STACK_MAX_TEMP 600
 
 CAN_HandleTypeDef hcan;
 SPI_HandleTypeDef hspi1;
@@ -22,10 +26,11 @@ static void processData(); /* processes all cell data */
 static void segmentCS(uint8_t board_id); /* selects the mux channel */
 static void sendCAN(); /* sends all segment data onto can */
 static void sendCANVerbose(); /* sends all segment data onto can */
-static void readPeripheral(uint8_t board_id); /* reads data from a single cell*/
+static void copyData(); /* copies data from the cells */
 
-#define MODE_NORMAL 	0
-#define MODE_CHARGING 	1
+#define MODE_FAULT      0
+#define MODE_NORMAL 	1
+#define MODE_CHARGING 	2
 
 kernel rtos_scheduler = {0, -1, {{0, 0, 0}}, 0, 0, {{0, 0, 0}}, 0, 0, {{0, 0, 0}}};
 
@@ -46,10 +51,11 @@ struct _SPI_Control {
 	uint8_t mode;
 	uint16_t lowestVoltage;
 	uint8_t _RESERVED[10];
-} SPI_Control = {0, 0, 0, 0};
+} SPI_Control = {0, 3500, {0}};
 
 uint8_t STATE_NORMAL;
 uint8_t STATE_CHARGING;
+uint8_t STATE_FAULT;
 
 /*
  * TODO: charging logic ?
@@ -62,35 +68,52 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
 void initCharging() {SPI_Control.mode = MODE_NORMAL;}
 void initNormal() {SPI_Control.mode = MODE_CHARGING;}
+void initFault() {
+	SPI_Control.mode = MODE_FAULT;
+
+	/*
+	 * do stuff like open shutdown
+	 * */
+}
 
 /**
   * @brief  The application entry point.
   * @retval int
   */
 int main(void) {
-	  HAL_Init();
-	  SystemClock_Config();
-	  MX_GPIO_Init();
-	  MX_CAN_Init();
-	  MX_SPI1_Init();
+	HAL_Init();
+	SystemClock_Config();
+	MX_GPIO_Init();
+	MX_CAN_Init();
+	MX_SPI1_Init();
 
-	  RTOS_init();
+	RTOS_init();
 
-	  /* TODO: should there be */
-	  STATE_NORMAL = RTOS_addState(initNormal, 0);
-	  STATE_CHARGING = RTOS_addState(initCharging, 0);
+	/* TODO: should there be */
+	STATE_NORMAL = RTOS_addState(initNormal, 0);
+	STATE_CHARGING = RTOS_addState(initCharging, 0);
+	STATE_FAULT = RTOS_addState(initFault, 0);
 
-	  RTOS_scheduleTask(STATE_NORMAL, processData, 20);
-	  RTOS_scheduleTask(STATE_CHARGING, processData, 20);
+	RTOS_scheduleTask(STATE_NORMAL, copyData, 20);
+	RTOS_scheduleTask(STATE_CHARGING, copyData, 20);
+	RTOS_scheduleTask(STATE_FAULT, copyData, 20);
 
+	RTOS_scheduleTask(STATE_NORMAL, processData, 20);
+	RTOS_scheduleTask(STATE_CHARGING, processData, 20);
 
-	  /* TODO: timer setup */
+	RTOS_scheduleTask(STATE_NORMAL, sendCAN, 100);
+	RTOS_scheduleTask(STATE_CHARGING, sendCAN, 100);
+	RTOS_scheduleTask(STATE_FAULT, sendCAN, 100);
 
-	  /* TODO: idk how the shutdown works, i need to check this lol */
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-	  while (1) {
+	SysTick_Config(48000);
 
-	  }
+	/* TODO: timer setup */
+
+	/* TODO: idk how the shutdown works, i need to check this lol */
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+	while (1) {
+		RTOS_ExecuteTasks();
+	}
 }
 
 
@@ -143,25 +166,38 @@ void sendCANVerbose(){
 }
 
 /*
- * processes data recieved from cells
+ * processes data received from cells, controls shutdown, etc.
  * */
 void processData() {
+	uint16_t newLowestVoltage = 65535;
 
+	for(int i = 0; i < HALF_SEGMENTS; i++){
+		if (SPI_Message[i].lowestTemp < newLowestVoltage)
+			newLowestVoltage = SPI_Message[i].lowestTemp;
+
+		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
+			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
+			RTOS_switchState(STATE_FAULT);
+		}
+
+		if(SPI_Message[i].highestTemp > STACK_MAX_TEMP){
+			RTOS_switchState(STATE_FAULT);
+		}
+	}
+
+	SPI_Control.lowestVoltage = newLowestVoltage;
 }
 
+/**
+ * copies the data from the cells
+ */
+void copyData(){
+	for (int i = 0; i < HALF_SEGMENTS; i++){
+		segmentCS(i); /* select segment to read */
 
-/*
- * Talks to a specific peripheral
- *
- * Pulls the segment's chip select low
- * Exchanges data with the segment
- * Pulls the segment's chip select high
- *
- * */
-void readPeripheral(uint8_t board_id){
-
+		HAL_SPI_TransmitReceive(&hspi1, (uint8_t*)&SPI_Control, (uint8_t*)&SPI_Message[i], sizeof(SPI_Control), 65535);
+	}
 }
-
 
 /**
   * @brief System Clock Configuration
