@@ -50,7 +50,7 @@ struct _SPI_Message {
 struct _SPI_Control {
 	uint8_t mode;
 	uint16_t lowestVoltage;
-	uint8_t _RESERVED[10];
+	uint8_t _RESERVED[sizeof(SPI_Message) - 3];
 } SPI_Control = {0, 3500, {0}};
 
 uint8_t STATE_NORMAL;
@@ -89,18 +89,20 @@ int main(void) {
 
 	RTOS_init();
 
-	/* TODO: should there be */
 	STATE_NORMAL = RTOS_addState(initNormal, 0);
 	STATE_CHARGING = RTOS_addState(initCharging, 0);
 	STATE_FAULT = RTOS_addState(initFault, 0);
 
+	/* read data in all modes every 20ms*/
 	RTOS_scheduleTask(STATE_NORMAL, copyData, 20);
 	RTOS_scheduleTask(STATE_CHARGING, copyData, 20);
 	RTOS_scheduleTask(STATE_FAULT, copyData, 20);
 
+	/* process data in non fault modes every 20ms*/
 	RTOS_scheduleTask(STATE_NORMAL, processData, 20);
 	RTOS_scheduleTask(STATE_CHARGING, processData, 20);
 
+	/* Send can messages in all modes every 100ms */
 	RTOS_scheduleTask(STATE_NORMAL, sendCAN, 100);
 	RTOS_scheduleTask(STATE_CHARGING, sendCAN, 100);
 	RTOS_scheduleTask(STATE_FAULT, sendCAN, 100);
