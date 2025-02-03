@@ -12,6 +12,10 @@
 
 #define STACK_MAX_TEMP 600
 
+#define CHARGER_DERATE_STACK_TEMP 500
+#define CHARGER_MAX_VOLTAGE 4500
+#define CHARGER_MAX_CURRENT 100
+
 CAN_HandleTypeDef hcan;
 SPI_HandleTypeDef hspi1;
 
@@ -24,10 +28,17 @@ static void MX_SPI1_Init(void);
 
 static void processData(); /* processes all cell data */
 static void segmentCS(uint8_t board_id); /* selects the mux channel */
-static void sendCAN(); /* sends all segment data onto can */
 static void sendCANVerbose(); /* sends all segment data onto can */
+static void sendCANStatus(); /* sends BMS_Status CAN message */
+static void chargerCtrl(); /* send CAN message to control Elcon charger */
 static void copyData(); /* copies data from the cells */
 
+/* sends a can message */
+static void sendCAN(uint16_t id, uint8_t * data, uint8_t length);
+
+/*
+ * The mode that gets sent to the segments
+ */
 #define MODE_FAULT      0
 #define MODE_NORMAL 	1
 #define MODE_CHARGING 	2
@@ -53,6 +64,9 @@ struct _SPI_Control {
 	uint8_t _RESERVED[sizeof(SPI_Message) - 3];
 } SPI_Control = {0, 3500, {0}};
 
+/**
+ * handles to the rtos states
+ */
 uint8_t STATE_NORMAL;
 uint8_t STATE_CHARGING;
 uint8_t STATE_FAULT;
@@ -62,7 +76,7 @@ uint8_t STATE_FAULT;
  * */
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-
+	/* TODO: filter out*/
 }
 
 
@@ -72,8 +86,13 @@ void initFault() {
 	SPI_Control.mode = MODE_FAULT;
 
 	/*
-	 * do stuff like open shutdown
+	 * TODO: make this open shutdown by sending a low signal to the LVBB
+	 * Also make it tell the charger to stop charging (if its in charging mode)
 	 * */
+	if (RTOS_inState(STATE_CHARGING)){
+
+	}
+
 }
 
 /**
@@ -103,15 +122,17 @@ int main(void) {
 	RTOS_scheduleTask(STATE_CHARGING, processData, 20);
 
 	/* Send can messages in all modes every 100ms */
-	RTOS_scheduleTask(STATE_NORMAL, sendCAN, 100);
-	RTOS_scheduleTask(STATE_CHARGING, sendCAN, 100);
-	RTOS_scheduleTask(STATE_FAULT, sendCAN, 100);
+	RTOS_scheduleTask(STATE_NORMAL, sendCANStatus, 100);
+	RTOS_scheduleTask(STATE_CHARGING, sendCANStatus, 100);
+	RTOS_scheduleTask(STATE_FAULT, sendCANStatus, 100);
+
+	/* Sends the charger status messages in the charging mode every 500ms */
+	RTOS_scheduleTask(STATE_CHARGING, chargerCtrl, 500);
 
 	SysTick_Config(48000);
 
 	/* TODO: timer setup */
 
-	/* TODO: idk how the shutdown works, i need to check this lol */
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 	while (1) {
 		RTOS_ExecuteTasks();
@@ -133,38 +154,35 @@ void segmentCS(uint8_t board_id) {
 }
 
 /*
- * Dumps all segment data onto the CAN bus
+ * Send a CAN message
+ * Takes in: 
+ * id, unsigned integer
+ * data, unsigned int pointer
+ * length, unsigned integer
  * */
-void sendCAN(){
-	CAN_TxHeaderTypeDef CAN_header = {
-			.StdId = 0,
-			.ExtId = 0,
-			.IDE = CAN_ID_STD,
-			.RTR = CAN_RTR_DATA,
-			.DLC = sizeof(BMS_Status),
-			.TransmitGlobalTime = DISABLE
-	};
-	uint32_t TxMailbox = 0;
-	for (int i=0; i < HALF_SEGMENTS; i++){
-		CAN_header.StdId = (BMS_CANID_DATA_0 + i);
-		BMS_Status CANData = {
-			(SPI_Message[i].highestVoltage / 4),
-			(SPI_Message[i].lowestVoltage / 4),
-			(SPI_Message[i].avgVoltage / 4),
-			(SPI_Message[i].highestTemp),
-			(SPI_Message[i].lowestTemp),
-			(SPI_Message[i].avgTemp),
-			0
-		}; 
-		HAL_CAN_AddTxMessage(&hcan, &CAN_header, (uint8_t *)&CANData, &TxMailbox);
-	}
+void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
+	/*TODO: Implement sendCAN using HAL_CAN_AddTxMessage*/
 }
 
 /*
- * Destroys the vehicles can bus
+ * Spits all segment data out onto the can bus, as defined in canDefinitions.h
+ */
+void sendCANStatus(){
+	
+}
+
+/*
+ * Sends out every cell temp and voltage over CAN
  */
 void sendCANVerbose(){
+	/*TODO: add verbose CAN headers and implement this function*/
+}
 
+/*
+ * Controls the Elcon charger when in charging mode
+ */
+void chargerCtrl() {
+	/*TODO: Send Charger_Control CAN message*/
 }
 
 /*
