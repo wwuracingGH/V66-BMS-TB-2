@@ -162,6 +162,16 @@ void segmentCS(uint8_t board_id) {
  * */
 void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
 	/*TODO: Implement sendCAN using HAL_CAN_AddTxMessage*/
+	CAN_TxHeaderTypeDef txHeader = {
+		.StdId = id,
+		.ExtId = 0,
+		.IDE = CAN_ID_STD,
+		.RTR = CAN_RTR_DATA,
+		.DLC = length,
+		.TransmitGlobalTime = DISABLE
+	};
+	uint32_t mailbox = 0;
+	HAL_CAN_AddTxMessage(&hcan, &txHeader, data, &mailbox);
 }
 
 /*
