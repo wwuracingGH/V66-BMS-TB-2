@@ -49,6 +49,15 @@ BMS_CANSTRUCT {
 	BMS_Byte  _RESERVED : 1;
 } BMS_Status;
 
+BMS_CANSTRUCT {
+	uint8_t type : 1;
+	uint8_t stack : 7;
+	uint16_t item_1 : 14;
+	uint16_t item_2 : 14;
+	uint16_t item_3 : 14;
+	uint16_t item_4 : 14;
+} BMS_Verbose;
+
 
 CHARGER_CANSTRUCT  { 
 	Charger_Voltage     maxChargingVoltage;

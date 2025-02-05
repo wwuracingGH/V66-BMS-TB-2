@@ -49,7 +49,6 @@ kernel rtos_scheduler = {0, -1, {{0, 0, 0}}, 0, 0, {{0, 0, 0}}, 0, 0, {{0, 0, 0}
  * SPI data
  */
 struct _SPI_Message {
-	uint8_t boardID;
 	uint16_t highestVoltage;
 	uint16_t avgVoltage;
 	uint16_t lowestVoltage;
@@ -59,10 +58,10 @@ struct _SPI_Message {
 } SPI_Message[HALF_SEGMENTS];
 
 struct _SPI_Control {
-	uint8_t mode;
+	uint16_t mode;
 	uint16_t lowestVoltage;
-	uint8_t _RESERVED[sizeof(SPI_Message) - 3];
-} SPI_Control = {0, 3500, {0}};
+	uint8_t _RESERVED[sizeof(SPI_Message[0]) - 4];
+} SPI_Control = {0, 3500,  {0,1,2,3,4,5,6,7}};
 
 /**
  * handles to the rtos states
@@ -133,7 +132,7 @@ int main(void) {
 
 	/* TODO: timer setup */
 
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+	//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 	while (1) {
 		RTOS_ExecuteTasks();
 	}
@@ -150,7 +149,7 @@ int main(void) {
  *  */
 void segmentCS(uint8_t board_id) {
 	GPIOB->ODR &= ~(0b1111 << 4);
-	GPIOB->ODR |= board_id << 4;
+	GPIOB->ODR |= (board_id + 1) << 4; /* TODO: on the new board the 1 shouldn't be necessary*/
 }
 
 /*
@@ -214,6 +213,8 @@ void processData() {
 void copyData(){
 	for (int i = 0; i < HALF_SEGMENTS; i++){
 		segmentCS(i); /* select segment to read */
+
+		for(int i = 0; i < 200; i++);
 
 		HAL_SPI_TransmitReceive(&hspi1, (uint8_t*)&SPI_Control, (uint8_t*)&SPI_Message[i], sizeof(SPI_Control), 65535);
 	}
@@ -303,7 +304,7 @@ static void MX_SPI1_Init(void)
 	hspi1.Instance = SPI1;
 	hspi1.Init.Mode = SPI_MODE_MASTER;
 	hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-	hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
+	hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
 	hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
 	hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
 	hspi1.Init.NSS = SPI_NSS_SOFT;
