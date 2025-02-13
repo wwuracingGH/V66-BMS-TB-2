@@ -126,6 +126,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
 	RTOS_Update();
+	HAL_IncTick();
 }
 
 /******************************************************************************/

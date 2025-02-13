@@ -33,6 +33,7 @@ static void sendCANStatus(); /* sends BMS_Status CAN message */
 static void chargerCtrl(); /* send CAN message to control Elcon charger */
 static void copyData(); /* copies data from the cells */
 
+
 /* sends a can message */
 static void sendCAN(uint16_t id, uint8_t * data, uint8_t length);
 
@@ -104,6 +105,8 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_CAN_Init();
 	MX_SPI1_Init();
+
+	HAL_CAN_Start(&hcan);
 
 	RTOS_init();
 
@@ -177,7 +180,21 @@ void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
  * Spits all segment data out onto the can bus, as defined in canDefinitions.h
  */
 void sendCANStatus(){
-	
+	for(int i = 0; i < HALF_SEGMENTS; i++){
+		BMS_Status data = {
+			(SPI_Message[i].highestVoltage / 4),
+			(SPI_Message[i].lowestVoltage / 4),
+			(SPI_Message[i].avgVoltage / 4),
+			SPI_Message[i].highestTemp,
+			SPI_Message[i].lowestTemp,
+			SPI_Message[i].avgTemp,
+			0
+		};
+
+		sendCAN(BMS_CANID_DATA_0 + i, (uint8_t * )&data, 8);
+
+		while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0);
+	}
 }
 
 /*
@@ -206,11 +223,11 @@ void processData() {
 
 		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
 			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
-			RTOS_switchState(STATE_FAULT);
+			/*RTOS_switchState(STATE_FAULT);*/
 		}
 
 		if(SPI_Message[i].highestTemp > STACK_MAX_TEMP){
-			RTOS_switchState(STATE_FAULT);
+			/*RTOS_switchState(STATE_FAULT);*/
 		}
 	}
 
@@ -224,7 +241,7 @@ void copyData(){
 	for (int i = 0; i < HALF_SEGMENTS; i++){
 		segmentCS(i); /* select segment to read */
 
-		for(int i = 0; i < 200; i++);
+		for(int i = 0; i < 500; i++);
 
 		HAL_SPI_TransmitReceive(&hspi1, (uint8_t*)&SPI_Control, (uint8_t*)&SPI_Message[i], sizeof(SPI_Control), 65535);
 	}
