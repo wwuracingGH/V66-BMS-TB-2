@@ -177,6 +177,8 @@ void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
  */
 void sendCANStatus(){
 	for (int i = 0; i < HALF_SEGMENTS; i++) {
+		while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0);
+
 		BMS_Status data = {
 			.maxVolt = SPI_Message[i].highestVoltage / 4,
 			.minVolt = SPI_Message[i].lowestVoltage / 4,
