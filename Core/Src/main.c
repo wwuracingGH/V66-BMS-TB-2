@@ -160,7 +160,6 @@ void segmentCS(uint8_t board_id) {
  * length, unsigned integer
  * */
 void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
-	/*TODO: Implement sendCAN using HAL_CAN_AddTxMessage*/
 	CAN_TxHeaderTypeDef txHeader = {
 		.StdId = id,
 		.ExtId = 0,
@@ -177,7 +176,20 @@ void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
  * Spits all segment data out onto the can bus, as defined in canDefinitions.h
  */
 void sendCANStatus(){
-	
+	for (int i = 0; i < HALF_SEGMENTS; i++) {
+		while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0);
+
+		BMS_Status data = {
+			.maxVolt = SPI_Message[i].highestVoltage / 4,
+			.minVolt = SPI_Message[i].lowestVoltage / 4,
+			.avgVolt = SPI_Message[i].avgVoltage / 4,
+			.maxTemp = SPI_Message[i].highestTemp,
+			.minTemp = SPI_Message[i].lowestTemp,
+			.avgTemp = SPI_Message[i].avgTemp,
+			._RESERVED = 0
+		};
+		sendCAN(BMS_CANID_DATA_0 + i, (uint8_t*) &data, sizeof(BMS_Status));
+	}
 }
 
 /*
