@@ -229,7 +229,7 @@ void processLoopNormal() {
 	faultCounter += processData();
 	if (faultCounter > MAX_FAULT_COUNT) {
 		RTOS_switchState(STATE_FAULT);
-	} else if (GPIOA->IDR & 1 << BMS_STATUS_PIN) {
+	} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/* initiate charging */
 		RTOS_switchState(STATE_CHARGING);
 	} else {
 		RTOS_switchState(STATE_NORMAL);
