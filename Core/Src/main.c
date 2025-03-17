@@ -16,17 +16,26 @@
 #define CHARGER_MAX_VOLTAGE 4500
 #define CHARGER_MAX_CURRENT 100
 
+#define MAX_FAULT_COUNT 5
+#define FAULT_RESET_COUNT 50
+
 CAN_HandleTypeDef hcan;
 SPI_HandleTypeDef hspi1;
 
 #define HALF_SEGMENTS 10
+
+#define BMS_STATUS_PIN 1
+#define CHARGER_ENABLE_PIN 0
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_CAN_Init(void);
 static void MX_SPI1_Init(void);
 
-static void processData(); /* processes all cell data */
+static void processLoopNormal(); /* check for persistent fault to switch to fault state */
+static void processLoopFault();	/* check for absence of faults to switch to normal state */
+static uint8_t processData(); /* processes all cell data, returns fault condition*/
+
 static void segmentCS(uint8_t board_id); /* selects the mux channel */
 static void sendCANVerbose(); /* sends all segment data onto can */
 static void sendCANStatus(); /* sends BMS_Status CAN message */
@@ -79,19 +88,20 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 }
 
 
-void initCharging() {SPI_Control.mode = MODE_NORMAL;}
-void initNormal() {SPI_Control.mode = MODE_CHARGING;}
+void initCharging() {
+	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
+	SPI_Control.mode = MODE_NORMAL;
+}
+
+void initNormal() {
+	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
+	SPI_Control.mode = MODE_CHARGING;
+}
+
 void initFault() {
+	chargerCtrl();	/* turns off charger */
 	SPI_Control.mode = MODE_FAULT;
-
-	/*
-	 * TODO: make this open shutdown by sending a low signal to the LVBB
-	 * Also make it tell the charger to stop charging (if its in charging mode)
-	 * */
-	if (RTOS_inState(STATE_CHARGING)){
-
-	}
-
+	GPIOA->ODR &= ~(1UL << BMS_STATUS_PIN);
 }
 
 /**
@@ -117,8 +127,9 @@ int main(void) {
 	RTOS_scheduleTask(STATE_FAULT, copyData, 20);
 
 	/* process data in non fault modes every 20ms*/
-	RTOS_scheduleTask(STATE_NORMAL, processData, 20);
-	RTOS_scheduleTask(STATE_CHARGING, processData, 20);
+	RTOS_scheduleTask(STATE_NORMAL, processLoopNormal, 20);
+	RTOS_scheduleTask(STATE_CHARGING, processLoopNormal, 20);
+	RTOS_scheduleTask(STATE_FAULT, processLoopFault, 20);
 
 	/* Send can messages in all modes every 100ms */
 	RTOS_scheduleTask(STATE_NORMAL, sendCANStatus, 100);
@@ -138,9 +149,6 @@ int main(void) {
 	}
 }
 
-
-
-
 /* Select the segment to be read and written to
  *
  * Takes in: board_id, unsigned integer
@@ -149,7 +157,7 @@ int main(void) {
  *  */
 void segmentCS(uint8_t board_id) {
 	GPIOB->ODR &= ~(0b1111 << 4);
-	GPIOB->ODR |= (board_id + 1) << 4; /* TODO: on the new board the 1 shouldn't be necessary*/
+	GPIOB->ODR |= (board_id + 1) << 4;
 }
 
 /*
@@ -204,12 +212,45 @@ void sendCANVerbose(){
  */
 void chargerCtrl() {
 	/*TODO: Send Charger_Control CAN message*/
+	Charger_Control chargerMsg = {
+			.maxChargingCurrent = CHARGER_MAX_CURRENT,
+			.maxChargingVoltage = CHARGER_MAX_VOLTAGE,
+			.chargerEnable = (RTOS_inState(STATE_CHARGING)),
+			._RESERVED = 0
+	};
+	sendCAN(BMS_CANID_CHARGER_CTRL, (uint8_t*) &chargerMsg, sizeof(Charger_Control));
 }
 
 /*
- * processes data received from cells, controls shutdown, etc.
- * */
-void processData() {
+ * Checks for fault conditions and switches to the fault state
+ */
+void processLoopNormal() {
+	static uint8_t faultCounter = 0;
+	faultCounter += processData();
+	if (faultCounter > MAX_FAULT_COUNT) {
+		RTOS_switchState(STATE_FAULT);
+	} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/* initiate charging */
+		RTOS_switchState(STATE_CHARGING);
+	} else {
+		RTOS_switchState(STATE_NORMAL);
+	}
+}
+
+/*
+ * Checks for absence of fault conditions and switches back to the normal state
+ */
+void processLoopFault() {
+	static uint8_t resetCounter = 0;
+	resetCounter += !processData();
+	if (resetCounter > FAULT_RESET_COUNT) {
+		RTOS_switchState(STATE_NORMAL);
+	}
+}
+
+/*
+ * processes data received from cells and returns fault condition
+ */
+uint8_t processData() {
 	uint16_t newLowestVoltage = 65535;
 
 	for(int i = 0; i < HALF_SEGMENTS; i++){
@@ -218,15 +259,16 @@ void processData() {
 
 		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
 			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
-			RTOS_switchState(STATE_FAULT);
+			return 1; /* fault detected */
 		}
 
 		if(SPI_Message[i].highestTemp > STACK_MAX_TEMP){
-			RTOS_switchState(STATE_FAULT);
+			return 1;
 		}
 	}
 
 	SPI_Control.lowestVoltage = newLowestVoltage;
+	return 0; /* no fault detected */
 }
 
 /**
