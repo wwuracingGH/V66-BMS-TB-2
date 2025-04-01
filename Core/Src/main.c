@@ -10,7 +10,7 @@
 /*
  * Feature Enable Flags
  */
-#define CHARGER_CONTROL_FEATURE 0
+#define CHARGER_CONTROL_ENABLED 0
 
 #define STACK_MAX_VOLTAGE 4200
 #define STACK_MIN_VOLTAGE 2700
@@ -142,7 +142,7 @@ int main(void) {
 	RTOS_scheduleTask(STATE_NORMAL, sendCANStatus, 100);
 	RTOS_scheduleTask(STATE_CHARGING, sendCANStatus, 100);
 	RTOS_scheduleTask(STATE_FAULT, sendCANStatus, 100);
-#if CHARGER_CONTROL_FEATURE == 1
+#if CHARGER_CONTROL_ENABLED == 1
 	/* Sends the charger status messages in the charging mode every 500ms */
 	RTOS_scheduleTask(STATE_CHARGING, chargerCtrl, 500);
 #endif
@@ -175,16 +175,6 @@ void segmentCS(uint8_t board_id) {
  * length, unsigned integer
  * */
 void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
-	/*CAN_TxHeaderTypeDef txHeader = {
-		.StdId = id,
-		.ExtId = 0,
-		.IDE = CAN_ID_STD,
-		.RTR = CAN_RTR_DATA,
-		.DLC = length,
-		.TransmitGlobalTime = DISABLE
-	};
-	uint32_t mailbox = 0;
-	HAL_CAN_AddTxMessage(&hcan, &txHeader, data, &mailbox);*/
 	/* all mailboxes full */
 	while(!(CAN->TSR & CAN_TSR_TME_Msk));
 
@@ -382,6 +372,12 @@ void CAN_Init (){
   * @param None
   * @retval None
   */
+
+
+/*
+ * Not used
+ */
+/*
 static void MX_CAN_Init(void)
 {
 	hcan.Instance = CAN;
@@ -414,13 +410,15 @@ static void MX_CAN_Init(void)
 
 	HAL_CAN_ConfigFilter(&hcan, &canfilterconfig);
 
-}
+} */
 
 /**
   * @brief SPI1 Initialization Function
   * @param None
   * @retval None
   */
+
+
 static void MX_SPI1_Init(void)
 {
 	/* SPI1 parameter configuration*/
