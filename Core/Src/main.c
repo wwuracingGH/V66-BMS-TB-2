@@ -7,6 +7,11 @@
 #include "rtos.h"
 #include "canDefinitions.h"
 
+/*
+ * Feature Enable Flags
+ */
+#define CHARGER_CONTROL_ENABLED 0
+
 #define STACK_MAX_VOLTAGE 4200
 #define STACK_MIN_VOLTAGE 2700
 
@@ -31,6 +36,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_CAN_Init(void);
 static void MX_SPI1_Init(void);
+static void CAN_Init(void);
 
 static void processLoopNormal(); /* check for persistent fault to switch to fault state */
 static void processLoopFault();	/* check for absence of faults to switch to normal state */
@@ -112,7 +118,8 @@ int main(void) {
 	HAL_Init();
 	SystemClock_Config();
 	MX_GPIO_Init();
-	MX_CAN_Init();
+	//MX_CAN_Init();
+	CAN_Init();
 	MX_SPI1_Init();
 
 	RTOS_init();
@@ -135,10 +142,10 @@ int main(void) {
 	RTOS_scheduleTask(STATE_NORMAL, sendCANStatus, 100);
 	RTOS_scheduleTask(STATE_CHARGING, sendCANStatus, 100);
 	RTOS_scheduleTask(STATE_FAULT, sendCANStatus, 100);
-
+#if CHARGER_CONTROL_ENABLED == 1
 	/* Sends the charger status messages in the charging mode every 500ms */
 	RTOS_scheduleTask(STATE_CHARGING, chargerCtrl, 500);
-
+#endif
 	SysTick_Config(48000);
 
 	/* TODO: timer setup */
@@ -168,24 +175,35 @@ void segmentCS(uint8_t board_id) {
  * length, unsigned integer
  * */
 void sendCAN(uint16_t id, uint8_t * data, uint8_t length){
-	CAN_TxHeaderTypeDef txHeader = {
-		.StdId = id,
-		.ExtId = 0,
-		.IDE = CAN_ID_STD,
-		.RTR = CAN_RTR_DATA,
-		.DLC = length,
-		.TransmitGlobalTime = DISABLE
-	};
-	uint32_t mailbox = 0;
-	HAL_CAN_AddTxMessage(&hcan, &txHeader, data, &mailbox);
-}
+	/* all mailboxes full */
+	while(!(CAN->TSR & CAN_TSR_TME_Msk));
+
+	/* find first empty mailbox */
+	int j = (CAN->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos;
+
+	/* set dlc to length */
+	CAN->sTxMailBox[j].TDTR = length;
+
+	/* clears data high/low registers */
+	CAN->sTxMailBox[j].TDLR = 0;
+	CAN->sTxMailBox[j].TDHR = 0;
+
+	/* writes to high/low registers */
+	for(int i = 0; i < length && i < 4; i++)
+		CAN->sTxMailBox[j].TDLR |= ((data[i] & 0xFF) << i * 8);
+	for(int i = 0; i < length - 4; i++)
+		CAN->sTxMailBox[j].TDHR |= ((data[i+4] & 0xFF) << i * 8);
+
+	/* writes id and queues message */
+	CAN->sTxMailBox[j].TIR = (uint32_t)((id << CAN_TI0R_STID_Pos) | CAN_TI0R_TXRQ);
+	}
 
 /*
  * Spits all segment data out onto the can bus, as defined in canDefinitions.h
  */
 void sendCANStatus(){
 	for (int i = 0; i < HALF_SEGMENTS; i++) {
-		while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0);
+		//while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0);
 
 		BMS_Status data = {
 			.maxVolt = SPI_Message[i].highestVoltage / 4,
@@ -318,11 +336,48 @@ void SystemClock_Config(void)
 	}
 }
 
+void CAN_Init (){
+
+	GPIOA->MODER |=   (0b10   << GPIO_MODER_MODER11_Pos)  /* CAN TX altfunc */
+	             | 	  (0b10   << GPIO_MODER_MODER12_Pos); /* CAN RX altfunc */
+
+	GPIOA->AFR[1] = (4 << GPIO_AFRH_AFSEL11_Pos) | (4 << GPIO_AFRH_AFSEL12_Pos); /* can AFR */
+
+    RCC->APB1ENR |= RCC_APB1ENR_CANEN;
+    CAN->MCR |= CAN_MCR_INRQ; /* goes from normal mode into initialization mode */
+
+    while (!(CAN->MSR & CAN_MSR_INAK));
+
+    /* wakes it up */
+    CAN->MCR &= ~CAN_MCR_SLEEP;
+    while (CAN->MSR & CAN_MSR_SLAK);
+
+    /* set bittiming - just read wikipedia if you don't know what that is */
+    /* TODO: why is it still 1/2 of what it should be */
+    CAN->BTR |= 23 << CAN_BTR_BRP_Pos | 1 << CAN_BTR_TS1_Pos | 0 << CAN_BTR_TS2_Pos;
+    CAN->MCR &= ~CAN_MCR_INRQ; /* clears the initialization request and starts the actual can */
+
+    while (CAN->MSR & CAN_MSR_INAK);
+
+    /* blank filter - tells the can to read every message */
+    CAN->FMR |= CAN_FMR_FINIT;
+    CAN->FA1R |= CAN_FA1R_FACT0;
+    CAN->sFilterRegister[0].FR1 = 0; /* Its like a filter, but doesn't filter anything! */
+    CAN->sFilterRegister[0].FR2 = 0;
+    CAN->FMR &=~ CAN_FMR_FINIT;
+    CAN->IER |= CAN_IER_FMPIE0;
+}
 /**
   * @brief CAN Initialization Function
   * @param None
   * @retval None
   */
+
+
+/*
+ * Not used
+ */
+/*
 static void MX_CAN_Init(void)
 {
 	hcan.Instance = CAN;
@@ -355,13 +410,15 @@ static void MX_CAN_Init(void)
 
 	HAL_CAN_ConfigFilter(&hcan, &canfilterconfig);
 
-}
+} */
 
 /**
   * @brief SPI1 Initialization Function
   * @param None
   * @retval None
   */
+
+
 static void MX_SPI1_Init(void)
 {
 	/* SPI1 parameter configuration*/
