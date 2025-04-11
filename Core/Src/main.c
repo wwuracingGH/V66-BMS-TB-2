@@ -78,6 +78,8 @@ struct _SPI_Control {
 	uint8_t _RESERVED[sizeof(SPI_Message[0]) - 4];
 } SPI_Control = {0, 3500,  {0,1,2,3,4,5,6,7}};
 
+BMS_FaultStatus FaultStatusMsg;
+
 /**
  * handles to the rtos states
  */
@@ -97,17 +99,20 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 void initCharging() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
 	SPI_Control.mode = MODE_NORMAL;
+	FaultStatusMsg.FaultStatus = 0;
 }
 
 void initNormal() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
 	SPI_Control.mode = MODE_CHARGING;
+	FaultStatusMsg.FaultStatus = 0;
 }
 
 void initFault() {
 	chargerCtrl();	/* turns off charger */
 	SPI_Control.mode = MODE_FAULT;
 	GPIOA->ODR &= ~(1UL << BMS_STATUS_PIN);
+	FaultStatusMsg.FaultStatus = 1;
 }
 
 /**
@@ -216,6 +221,7 @@ void sendCANStatus(){
 		};
 		sendCAN(BMS_CANID_DATA_0 + i, (uint8_t*) &data, sizeof(BMS_Status));
 	}
+	sendCAN(BMS_CANID_FAULTSTATUS, (uint8_t *)&FaultStatusMsg, sizeof(FaultStatusMsg));
 }
 
 /*
@@ -270,11 +276,27 @@ void processLoopFault() {
  */
 uint8_t processData() {
 	uint16_t newLowestVoltage = 65535;
+	uint16_t newHighestVoltage = 0;
+	uint16_t newLowestTemp = 65535;
+	uint16_t newHighestTemp = 0;
 
 	for(int i = 0; i < HALF_SEGMENTS; i++){
-		if (SPI_Message[i].lowestTemp < newLowestVoltage)
-			newLowestVoltage = SPI_Message[i].lowestTemp;
-
+		if (SPI_Message[i].lowestVoltage < newLowestVoltage){
+			newLowestVoltage = SPI_Message[i].lowestVoltage;
+		}
+		if (SPI_Message[i].highestVoltage < newHighestVoltage){
+			newHighestVoltage =	SPI_Message[i].highestVoltage;
+		}
+		if (SPI_Message[i].lowestTemp < newLowestTemp){
+			newLowestTemp =	SPI_Message[i].lowestTemp;
+		}
+		if (SPI_Message[i].highestTemp < newHighestTemp){
+			newHighestTemp = SPI_Message[i].highestTemp;
+		}
+		FaultStatusMsg.packMaxVolt = newHighestVoltage;
+		FaultStatusMsg.packMinVolt = newLowestVoltage;
+		FaultStatusMsg.packMaxTemp = newHighestTemp;
+		FaultStatusMsg.packMinTemp = newLowestTemp;
 		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
 			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
 			return 1; /* fault detected */
