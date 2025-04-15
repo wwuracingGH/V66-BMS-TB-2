@@ -284,8 +284,13 @@ uint8_t processData() {
 	uint16_t newHighestVoltage = 0;
 	uint16_t newLowestTemp = 65535;
 	uint16_t newHighestTemp = 0;
+	uint16_t sumAvgVolt = 0;
+	uint16_t sumAvgTemp = 0;
 
 	for(int i = 0; i < HALF_SEGMENTS; i++){
+		sumAvgVolt += SPI_Message[i].avgVoltage;
+		sumAvgTemp += SPI_Message[i].avgTemp;
+
 		if (SPI_Message[i].lowestVoltage < newLowestVoltage){
 			newLowestVoltage = SPI_Message[i].lowestVoltage;
 		}
@@ -298,18 +303,21 @@ uint8_t processData() {
 		if (SPI_Message[i].highestTemp < newHighestTemp){
 			newHighestTemp = SPI_Message[i].highestTemp;
 		}
-		FaultStatusMsg.packMaxVolt = newHighestVoltage;
-		FaultStatusMsg.packMinVolt = newLowestVoltage;
-		FaultStatusMsg.packMaxTemp = newHighestTemp;
-		FaultStatusMsg.packMinTemp = newLowestTemp;
-		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
-			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
-			return 1; /* fault detected */
-		}
+	}
 
-		if(SPI_Message[i].highestTemp > STACK_MAX_TEMP){
-			return 1;
-		}
+	FaultStatusMsg.packMaxVolt = newHighestVoltage;
+	FaultStatusMsg.packMinVolt = newLowestVoltage;
+	FaultStatusMsg.packAvgVolt = sumAvgVolt / HALF_SEGMENTS;
+	FaultStatusMsg.packMaxTemp = newHighestTemp;
+	FaultStatusMsg.packMinTemp = newLowestTemp;
+	FaultStatusMsg.packAvgTemp = sumAvgTemp / HALF_SEGMENTS;
+
+	if(newHighestVoltage > STACK_MAX_VOLTAGE ||
+		newLowestVoltage < STACK_MIN_VOLTAGE){
+		return 1; /* fault detected */
+	}
+	if(newHighestTemp > STACK_MAX_TEMP){
+		return 1;
 	}
 
 	SPI_Control.lowestVoltage = newLowestVoltage;

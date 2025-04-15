@@ -27,7 +27,7 @@ typedef uint32_t    Charger_Reserved;
 #define BMS_CANID_DATA_7                  0x027
 #define BMS_CANID_DATA_8                  0x028
 #define BMS_CANID_DATA_9                  0x029
-#define BMS_CANID_FAULTSTATUS		  	  0x02A
+#define BMS_CANID_FAULTSTATUS		  	  0x02F
 
 #define BMS_CANID_CHARGER_CTRL            0x0F4
 #define BMS_CANID_CHARGER_STATUS          0X0E5
@@ -53,10 +53,11 @@ BMS_CANSTRUCT {
 BMS_CANSTRUCT {
 	BMS_Voltage packMaxVolt : 11;
 	BMS_Voltage packMinVolt : 11;
+	BMS_Voltage packAvgVolt : 11;
 	BMS_Temp    packMaxTemp : 10;
 	BMS_Temp    packMinTemp : 10;
+	BMS_Temp    packAvgTemp : 10;
 	BMS_Byte  	FaultStatus : 1;
-	uint32_t 	_RESERVED   : 21;
 } BMS_FaultStatus;
 
 BMS_CANSTRUCT {
