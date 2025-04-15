@@ -34,7 +34,7 @@ SPI_HandleTypeDef hspi1;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_CAN_Init(void);
+//static void MX_CAN_Init(void);
 static void MX_SPI1_Init(void);
 static void CAN_Init(void);
 
@@ -155,7 +155,6 @@ int main(void) {
 
 	/* TODO: timer setup */
 
-	//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 	while (1) {
 		RTOS_ExecuteTasks();
 	}
@@ -250,7 +249,10 @@ void chargerCtrl() {
  */
 void processLoopNormal() {
 	static uint8_t faultCounter = 0;
-	faultCounter += processData();
+	switch (processData()){
+		case 1: faultCounter++;
+		case 0: faultCounter--;
+	}
 	if (faultCounter > MAX_FAULT_COUNT) {
 		RTOS_switchState(STATE_FAULT);
 	} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/* initiate charging */
@@ -265,7 +267,10 @@ void processLoopNormal() {
  */
 void processLoopFault() {
 	static uint8_t resetCounter = 0;
-	resetCounter += !processData();
+	switch (processData()){
+		case 1: resetCounter--;
+		case 0: resetCounter++;
+	}
 	if (resetCounter > FAULT_RESET_COUNT) {
 		RTOS_switchState(STATE_NORMAL);
 	}
