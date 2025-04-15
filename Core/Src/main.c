@@ -34,7 +34,7 @@ SPI_HandleTypeDef hspi1;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_CAN_Init(void);
+//static void MX_CAN_Init(void);
 static void MX_SPI1_Init(void);
 static void CAN_Init(void);
 
@@ -78,6 +78,8 @@ struct _SPI_Control {
 	uint8_t _RESERVED[sizeof(SPI_Message[0]) - 4];
 } SPI_Control = {0, 3500,  {0,1,2,3,4,5,6,7}};
 
+BMS_FaultStatus FaultStatusMsg;
+
 /**
  * handles to the rtos states
  */
@@ -97,17 +99,20 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 void initCharging() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
 	SPI_Control.mode = MODE_NORMAL;
+	FaultStatusMsg.FaultStatus = 0;
 }
 
 void initNormal() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
 	SPI_Control.mode = MODE_CHARGING;
+	FaultStatusMsg.FaultStatus = 0;
 }
 
 void initFault() {
 	chargerCtrl();	/* turns off charger */
 	SPI_Control.mode = MODE_FAULT;
 	GPIOA->ODR &= ~(1UL << BMS_STATUS_PIN);
+	FaultStatusMsg.FaultStatus = 1;
 }
 
 /**
@@ -150,7 +155,6 @@ int main(void) {
 
 	/* TODO: timer setup */
 
-	//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 	while (1) {
 		RTOS_ExecuteTasks();
 	}
@@ -216,6 +220,7 @@ void sendCANStatus(){
 		};
 		sendCAN(BMS_CANID_DATA_0 + i, (uint8_t*) &data, sizeof(BMS_Status));
 	}
+	sendCAN(BMS_CANID_FAULTSTATUS, (uint8_t *)&FaultStatusMsg, sizeof(FaultStatusMsg));
 }
 
 /*
@@ -244,7 +249,10 @@ void chargerCtrl() {
  */
 void processLoopNormal() {
 	static uint8_t faultCounter = 0;
-	faultCounter += processData();
+	switch (processData()){
+		case 1: faultCounter++;
+		case 0: faultCounter--;
+	}
 	if (faultCounter > MAX_FAULT_COUNT) {
 		RTOS_switchState(STATE_FAULT);
 	} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/* initiate charging */
@@ -259,7 +267,10 @@ void processLoopNormal() {
  */
 void processLoopFault() {
 	static uint8_t resetCounter = 0;
-	resetCounter += !processData();
+	switch (processData()){
+		case 1: resetCounter--;
+		case 0: resetCounter++;
+	}
 	if (resetCounter > FAULT_RESET_COUNT) {
 		RTOS_switchState(STATE_NORMAL);
 	}
@@ -270,19 +281,43 @@ void processLoopFault() {
  */
 uint8_t processData() {
 	uint16_t newLowestVoltage = 65535;
+	uint16_t newHighestVoltage = 0;
+	uint16_t newLowestTemp = 65535;
+	uint16_t newHighestTemp = 0;
+	uint16_t sumAvgVolt = 0;
+	uint16_t sumAvgTemp = 0;
 
 	for(int i = 0; i < HALF_SEGMENTS; i++){
-		if (SPI_Message[i].lowestTemp < newLowestVoltage)
-			newLowestVoltage = SPI_Message[i].lowestTemp;
+		sumAvgVolt += SPI_Message[i].avgVoltage;
+		sumAvgTemp += SPI_Message[i].avgTemp;
 
-		if(SPI_Message[i].highestVoltage > STACK_MAX_VOLTAGE ||
-			SPI_Message[i].lowestVoltage < STACK_MIN_VOLTAGE){
-			return 1; /* fault detected */
+		if (SPI_Message[i].lowestVoltage < newLowestVoltage){
+			newLowestVoltage = SPI_Message[i].lowestVoltage;
 		}
+		if (SPI_Message[i].highestVoltage < newHighestVoltage){
+			newHighestVoltage =	SPI_Message[i].highestVoltage;
+		}
+		if (SPI_Message[i].lowestTemp < newLowestTemp){
+			newLowestTemp =	SPI_Message[i].lowestTemp;
+		}
+		if (SPI_Message[i].highestTemp < newHighestTemp){
+			newHighestTemp = SPI_Message[i].highestTemp;
+		}
+	}
 
-		if(SPI_Message[i].highestTemp > STACK_MAX_TEMP){
-			return 1;
-		}
+	FaultStatusMsg.packMaxVolt = newHighestVoltage;
+	FaultStatusMsg.packMinVolt = newLowestVoltage;
+	FaultStatusMsg.packAvgVolt = sumAvgVolt / HALF_SEGMENTS;
+	FaultStatusMsg.packMaxTemp = newHighestTemp;
+	FaultStatusMsg.packMinTemp = newLowestTemp;
+	FaultStatusMsg.packAvgTemp = sumAvgTemp / HALF_SEGMENTS;
+
+	if(newHighestVoltage > STACK_MAX_VOLTAGE ||
+		newLowestVoltage < STACK_MIN_VOLTAGE){
+		return 1; /* fault detected */
+	}
+	if(newHighestTemp > STACK_MAX_TEMP){
+		return 1;
 	}
 
 	SPI_Control.lowestVoltage = newLowestVoltage;
