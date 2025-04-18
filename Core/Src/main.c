@@ -4,6 +4,10 @@
  * */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
+#define RTOS_maxTaskNum 16
+#define RTOS_maxEventNum 8
+#define RTOS_maxStateNum 8
 #include "llrttsos.h"
 _RTOS_IMPLEMENTATION_
 #include "canDefinitions.h"
