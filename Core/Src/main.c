@@ -276,18 +276,9 @@ void processLoopNormal() {
  * Checks for absence of fault conditions and switches back to the normal state
  */
 void processLoopFault() {
-	static uint8_t resetCounter = 0;
-	//uint8_t currentfault =
-	if (!processData()){
+	if(!processData()){
 		RTOS_switchState(STATE_NORMAL);
 	}
-	/*switch (currentfault){
-		case 1: resetCounter--;
-		case 0: resetCounter++;
-	}
-	if (resetCounter > FAULT_RESET_COUNT) {
-		RTOS_switchState(STATE_NORMAL);
-	}*/
 }
 
 /*
