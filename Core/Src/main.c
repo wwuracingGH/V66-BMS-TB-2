@@ -4,8 +4,10 @@
  * */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "rtos.h"
+#include "llrttsos.h"
+_RTOS_IMPLEMENTATION_
 #include "canDefinitions.h"
+
 
 /*
  * Feature Enable Flags
@@ -56,9 +58,11 @@ static void sendCAN(uint16_t id, uint8_t * data, uint8_t length);
  */
 #define MODE_FAULT      0
 #define MODE_NORMAL 	1
-#define MODE_CHARGING 	2
+//#define MODE_CHARGING 	2
+/*
 
-kernel rtos_scheduler = {0, -1, {{0, 0, 0}}, 0, 0, {{0, 0, 0}}, 0, 0, {{0, 0, 0}}};
+*/
+
 
 /*
  * SPI data
@@ -96,15 +100,15 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 }
 
 
-void initCharging() {
+/*void initCharging() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
-	SPI_Control.mode = MODE_NORMAL;
+	//SPI_Control.mode = MODE_NORMAL;
 	FaultStatusMsg.FaultStatus = 0;
-}
+}*/
 
 void initNormal() {
 	GPIOA->ODR |= (1UL << BMS_STATUS_PIN);
-	SPI_Control.mode = MODE_CHARGING;
+	SPI_Control.mode = MODE_NORMAL;
 	FaultStatusMsg.FaultStatus = 0;
 }
 
@@ -128,24 +132,25 @@ int main(void) {
 	MX_SPI1_Init();
 
 	RTOS_init();
+	copyData();
 
 	STATE_NORMAL = RTOS_addState(initNormal, 0);
-	STATE_CHARGING = RTOS_addState(initCharging, 0);
+	//STATE_CHARGING = RTOS_addState(initCharging, 0);
 	STATE_FAULT = RTOS_addState(initFault, 0);
 
 	/* read data in all modes every 20ms*/
 	RTOS_scheduleTask(STATE_NORMAL, copyData, 20);
-	RTOS_scheduleTask(STATE_CHARGING, copyData, 20);
+	//RTOS_scheduleTask(STATE_CHARGING, copyData, 20);
 	RTOS_scheduleTask(STATE_FAULT, copyData, 20);
 
 	/* process data in non fault modes every 20ms*/
 	RTOS_scheduleTask(STATE_NORMAL, processLoopNormal, 20);
-	RTOS_scheduleTask(STATE_CHARGING, processLoopNormal, 20);
+//	RTOS_scheduleTask(STATE_CHARGING, processLoopNormal, 20);
 	RTOS_scheduleTask(STATE_FAULT, processLoopFault, 20);
 
 	/* Send can messages in all modes every 100ms */
 	RTOS_scheduleTask(STATE_NORMAL, sendCANStatus, 100);
-	RTOS_scheduleTask(STATE_CHARGING, sendCANStatus, 100);
+//	RTOS_scheduleTask(STATE_CHARGING, sendCANStatus, 100);
 	RTOS_scheduleTask(STATE_FAULT, sendCANStatus, 100);
 #if CHARGER_CONTROL_ENABLED == 1
 	/* Sends the charger status messages in the charging mode every 500ms */
@@ -248,15 +253,16 @@ void chargerCtrl() {
  * Checks for fault conditions and switches to the fault state
  */
 void processLoopNormal() {
-	static uint8_t faultCounter = 0;
-	switch (processData()){
-		case 1: faultCounter++;
-		case 0: faultCounter--;
+	static int8_t faultCounter = 0;
+	uint8_t currentfault = processData();
+	switch (currentfault){
+		case 0: faultCounter = 0;
+		default: faultCounter++;
 	}
 	if (faultCounter > MAX_FAULT_COUNT) {
 		RTOS_switchState(STATE_FAULT);
-	} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/* initiate charging */
-		RTOS_switchState(STATE_CHARGING);
+	/*} else if (GPIOA->IDR & 1 << CHARGER_ENABLE_PIN) { 		/ initiate charging /
+		RTOS_switchState(STATE_CHARGING); */
 	} else {
 		RTOS_switchState(STATE_NORMAL);
 	}
@@ -267,13 +273,17 @@ void processLoopNormal() {
  */
 void processLoopFault() {
 	static uint8_t resetCounter = 0;
-	switch (processData()){
+	//uint8_t currentfault =
+	if (!processData()){
+		RTOS_switchState(STATE_NORMAL);
+	}
+	/*switch (currentfault){
 		case 1: resetCounter--;
 		case 0: resetCounter++;
 	}
 	if (resetCounter > FAULT_RESET_COUNT) {
 		RTOS_switchState(STATE_NORMAL);
-	}
+	}*/
 }
 
 /*
@@ -294,20 +304,20 @@ uint8_t processData() {
 		if (SPI_Message[i].lowestVoltage < newLowestVoltage){
 			newLowestVoltage = SPI_Message[i].lowestVoltage;
 		}
-		if (SPI_Message[i].highestVoltage < newHighestVoltage){
+		if (SPI_Message[i].highestVoltage > newHighestVoltage){
 			newHighestVoltage =	SPI_Message[i].highestVoltage;
 		}
 		if (SPI_Message[i].lowestTemp < newLowestTemp){
 			newLowestTemp =	SPI_Message[i].lowestTemp;
 		}
-		if (SPI_Message[i].highestTemp < newHighestTemp){
+		if (SPI_Message[i].highestTemp > newHighestTemp){
 			newHighestTemp = SPI_Message[i].highestTemp;
 		}
 	}
 
-	FaultStatusMsg.packMaxVolt = newHighestVoltage;
-	FaultStatusMsg.packMinVolt = newLowestVoltage;
-	FaultStatusMsg.packAvgVolt = sumAvgVolt / HALF_SEGMENTS;
+	FaultStatusMsg.packMaxVolt = newHighestVoltage / 4;
+	FaultStatusMsg.packMinVolt = newLowestVoltage / 4;
+	FaultStatusMsg.packAvgVolt = sumAvgVolt / (HALF_SEGMENTS * 4);
 	FaultStatusMsg.packMaxTemp = newHighestTemp;
 	FaultStatusMsg.packMinTemp = newLowestTemp;
 	FaultStatusMsg.packAvgTemp = sumAvgTemp / HALF_SEGMENTS;
